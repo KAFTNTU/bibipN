@@ -1,0 +1,117 @@
+export const CONFIG = {
+    RENDER: { FOV: 60, NEAR: 0.01, FAR: 1000 },
+    PHYSICS: {
+        ROTATION_SPEED: 0.9, LERP_FACTOR: 0.4, SNAP_DISTANCE: 0.8, GRAB_RADIUS: 1,
+        BOB_SPEED: 1.5, BOB_HEIGHT: 0.05, REARRANGE_SPEED: 0.08, 
+        DISPENSER_COOLDOWN: 5000, ROTATION_SNAP_DEG: 15, MAGNET_RADIUS: 0.3
+    },
+    INPUT: {
+        SENSITIVITY: 1.45, FILTER_FREQ: 60, FILTER_MIN_CUT: 1.0, 
+        FILTER_BETA: 0.007, FILTER_DERIV_CUT: 1.0, PINCH_THRESHOLD: 0.05
+    },
+    THEME: {
+        PRIMARY: 0x00ffcc, CHASSIS: 0x333333, GHOST_VALID: 0x00ff00, GHOST_HL: 0xff0000,
+        CUR_OPEN: 0xff0000, CUR_CLOSED: 0x00aaff, CUR_ROT: 0xffff00, CUR_ZOOM: 0xe600ff,
+        DISPENSER: 0x004466, DISPENSER_CD: 0x330000
+    }
+};
+
+export const TEXTURES_URLS = {
+    TOP: 'photo/top.jpg', LONG: 'photo/side_long.jpg', SHORT: 'photo/side_short.jpg'
+};
+
+// --- AUDIO ---
+export class AudioEngine {
+    constructor() { this.ctx = null; this.gain = null; this.ready = false; }
+    init() {
+        if (this.ready) return;
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AC();
+            this.gain = this.ctx.createGain();
+            this.gain.gain.value = 0.4;
+            this.gain.connect(this.ctx.destination);
+            this.ready = true;
+        } catch (e) { console.error("Audio Init Failed"); }
+    }
+    play(type, freq, dur, vol = 1.0) {
+        if (!this.ready) return;
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = type; osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        g.gain.setValueAtTime(vol, this.ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+        osc.connect(g); g.connect(this.gain);
+        osc.start(); osc.stop(this.ctx.currentTime + dur);
+    }
+    sfxHover() { this.play('triangle', 800, 0.05, 0.1); }
+    sfxGrab() { this.play('sine', 200, 0.15, 0.3); this.play('square', 100, 0.1, 0.1); }
+    sfxSnap() { this.play('square', 800, 0.1, 0.2); setTimeout(() => this.play('sine', 60, 0.3, 0.5), 50); }
+    sfxDispense() { this.play('sawtooth', 400, 0.1, 0.2); this.play('sine', 800, 0.2, 0.2); }
+    sfxError() { this.play('sawtooth', 150, 0.3, 0.3); }
+    sfxWin() { [523, 659, 783, 1046].forEach((f, i) => setTimeout(() => this.play('square', f, 0.4, 0.3), i * 150)); }
+}
+
+// --- LIGHT CHECK ---
+export class LightCheck {
+    constructor() {
+        this.cvs = document.createElement('canvas');
+        this.cvs.width = 160; this.cvs.height = 120;
+        this.ctx = this.cvs.getContext('2d', { willReadFrequently: true });
+        this.lastT = 0; this.lastLvl = null;
+    }
+    update(video) {
+        const now = performance.now();
+        if (now - this.lastT < 1500) return null;
+        this.lastT = now;
+        this.ctx.drawImage(video, 0, 0, 160, 120);
+        const data = this.ctx.getImageData(0, 0, 160, 120).data;
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 16) sum += (data[i] + data[i+1] + data[i+2]) / 3;
+        const avg = sum / (data.length / 16);
+        let lvl = avg < 60 ? 'red' : (avg < 110 ? 'yellow' : 'green');
+        if (lvl === this.lastLvl) return null;
+        this.lastLvl = lvl;
+        return lvl;
+    }
+}
+
+// --- FILTERS ---
+class LowPass {
+    constructor(a) { this.a = a; this.y = null; this.s = null; }
+    setAlpha(a) { this.a = a; }
+    filter(v) { 
+        if (this.y === null) this.s = v; 
+        else this.s = this.a * v + (1.0 - this.a) * this.s;
+        this.y = this.s; return this.y;
+    }
+    last() { return this.y; }
+}
+class OneEuro {
+    constructor(freq, min, beta, dcut) {
+        this.f = freq; this.min = min; this.b = beta; this.d = dcut;
+        this.x = new LowPass(this.alpha(min)); this.dx = new LowPass(this.alpha(dcut));
+        this.lastT = null;
+    }
+    alpha(cutoff) { return 1.0 / (1.0 + (1.0/this.f) * 2 * Math.PI * cutoff); }
+    filter(v, t) {
+        if (this.lastT && t) this.f = 1.0 / (t - this.lastT);
+        this.lastT = t;
+        const dx = (this.x.last() === null) ? 0 : (v - this.x.last()) * this.f;
+        const edx = this.dx.filter(dx);
+        const cut = this.min + this.b * Math.abs(edx);
+        return this.x.filter(v, this.alpha(cut));
+    }
+}
+export class VectorFilter {
+    constructor() {
+        const i = CONFIG.INPUT;
+        this.x = new OneEuro(i.FILTER_FREQ, i.FILTER_MIN_CUT, i.FILTER_BETA, i.FILTER_DERIV_CUT);
+        this.y = new OneEuro(i.FILTER_FREQ, i.FILTER_MIN_CUT, i.FILTER_BETA, i.FILTER_DERIV_CUT);
+        this.z = new OneEuro(i.FILTER_FREQ, i.FILTER_MIN_CUT, i.FILTER_BETA, i.FILTER_DERIV_CUT);
+    }
+    process(v, t) {
+        return new THREE.Vector3(this.x.filter(v.x, t), this.y.filter(v.y, t), this.z.filter(v.z, t));
+    }
+}

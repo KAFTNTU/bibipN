@@ -1,0 +1,151 @@
+import { CONFIG, AudioEngine } from './config.js';
+import { ModelFactory } from './models.js';
+
+const Audio = new AudioEngine();
+Audio.init(); // Init audio context early if possible
+
+export class GameLogic {
+    constructor(sceneGraph) {
+        this.sg = sceneGraph;
+        this.parts = [];
+        this.snaps = [];
+        this.installedCount = 0;
+        this.totalParts = 0;
+        this.counts = { wheel: { current: 0, max: 0 }, gear: { current: 0, max: 0 } };
+        this.dispensers = [];
+        this.initLevel();
+    }
+
+    initLevel() {
+        this.createSnap('wheel', new THREE.Vector3(-1.5, 0, -1.2));
+        this.createSnap('wheel', new THREE.Vector3(1.5, 0, -1.2));
+        this.createSnap('wheel', new THREE.Vector3(-1.5, 0, 1.2));
+        this.createSnap('wheel', new THREE.Vector3(1.5, 0, 1.2));
+        
+        [-1.0, 0.0, 1.0].forEach(z => this.createSnap('gear', new THREE.Vector3(-1.25, 0, z)));
+        [-1.2, -0.4, 0.4, 1.2].forEach(z => this.createSnap('gear', new THREE.Vector3(1.25, 0, z)));
+
+        this.createSnap('board', new THREE.Vector3(0, 0.08, -1.0));
+        this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8));
+        this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8));
+        this.createSnap('cover_green', new THREE.Vector3(0, 0.50, 0));
+        
+        this.createSnap('motor', new THREE.Vector3(0.58, 0, -1.2)); 
+        this.createSnap('motor', new THREE.Vector3(-0.58, 0, 1.2)); 
+        this.createSnap('sensor', new THREE.Vector3(0, 0.95, 1.8));
+
+        this.spawnLooseParts();
+        this.dispensers.push(this.sg.createDispenser('wheel', new THREE.Vector3(-2.2, 2.0, -1.0)));
+        this.dispensers.push(this.sg.createDispenser('gear', new THREE.Vector3(2.2, 2.0, -1.0)));
+    }
+
+    createSnap(type, pos) {
+        const snap = new THREE.Group(); snap.position.copy(pos);
+        if (type === 'motor' && pos.x < 0) snap.rotation.y = Math.PI;
+
+        let ghostGeo = new THREE.BoxGeometry(0.5,0.5,0.5);
+        if(type === 'gear') ghostGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 16); 
+        else if(type === 'wheel') ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
+        else if(type === 'battery') ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
+        
+        if(['gear', 'wheel'].includes(type)) snap.rotation.z = Math.PI/2;
+        if(type === 'battery') { snap.rotation.x = Math.PI/2; snap.rotation.z = Math.PI/2; }
+
+        const ghost = new THREE.Mesh(ghostGeo, new THREE.MeshBasicMaterial({color: CONFIG.THEME.GHOST_VALID, wireframe: true, opacity: 0.3, transparent: true}));
+        snap.add(ghost);
+        snap.userData = { isSnap: true, type, occupied: false, mesh: ghost };
+        this.sg.worldRoot.add(snap);
+        this.snaps.push(snap);
+        this.totalParts++;
+        if (this.counts[type]) this.counts[type].max++;
+    }
+
+    spawnLooseParts() {
+        this.snaps.forEach((snap) => {
+            const type = snap.userData.type;
+            if (type === 'wheel' || type === 'gear') return;
+            const part = ModelFactory.createPart(type);
+            part.userData.type = type; part.userData.isInstalled = false; part.userData.inInventory = true; 
+            part.userData.basePos = new THREE.Vector3();
+            this.sg.floatingRoot.add(part); this.parts.push(part);
+        });
+        this.rearrangeParts();
+        this.updateCounter();
+    }
+
+    tryDispense(type, dispenserObj) {
+        const now = Date.now();
+        if (dispenserObj.userData.lastDispenseTime && (now - dispenserObj.userData.lastDispenseTime < CONFIG.PHYSICS.DISPENSER_COOLDOWN)) {
+            Audio.sfxError(); return null;
+        }
+        if (!this.counts[type] || this.counts[type].current >= this.counts[type].max) {
+            Audio.sfxError(); return null; 
+        }
+        const part = ModelFactory.createPart(type);
+        part.userData.type = type; part.userData.isInstalled = false; part.userData.inInventory = false; 
+        this.sg.floatingRoot.add(part); this.parts.push(part);
+        this.counts[type].current++;
+        dispenserObj.userData.lastDispenseTime = now; 
+        Audio.sfxDispense();
+        return part;
+    }
+
+    updateCounter() {
+        document.getElementById('part-counter').innerText = `${this.installedCount} / ${this.totalParts}`;
+        if(this.installedCount === this.totalParts) { Audio.sfxVictory(); document.getElementById('victory-screen').classList.add('active'); }
+    }
+
+    checkSnap(part, partPos) {
+        let bestSnap = null; let limit = 1.5; 
+        if (part.userData.type === 'sensor') {
+            const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
+            if (!isCoverInstalled) return null; 
+        }
+        for (const snap of this.snaps) {
+            if (snap.userData.occupied) continue;
+            if (snap.userData.type !== part.userData.type) continue;
+            const dist = partPos.distanceTo(snap.getWorldPosition(new THREE.Vector3()));
+            if (dist < limit) { limit = dist; bestSnap = snap; }
+        }
+        return bestSnap;
+    }
+    
+    updateHighlights(activePart, bestSnap) {
+        if (!activePart) { this.snaps.forEach(s => { if (!s.userData.occupied) s.userData.mesh.visible = false; }); return; }
+        this.snaps.forEach(snap => {
+            if (snap.userData.occupied || snap.userData.type !== activePart.userData.type) return;
+            const mesh = snap.userData.mesh;
+            if (snap === bestSnap) {
+                mesh.visible = true; mesh.material.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); mesh.material.opacity = 0.8;
+            } else { mesh.visible = false; }
+        });
+    }
+
+    rearrangeParts() {
+        const activeParts = this.parts.filter(p => p.userData.inInventory);
+        activeParts.forEach((part, index) => {
+            const col = index % 2; const row = Math.floor(index / 2);
+            part.userData.basePos.set((col - 0.5) * 1.0, 1.5 + (row * 0.8), 1.0 + (row * 0.1));
+        });
+    }
+
+    installPart(part, snap) {
+        this.sg.floatingRoot.remove(part); this.sg.worldRoot.add(part);
+        part.position.copy(snap.position);
+        if (['gear', 'wheel', 'sensor'].includes(part.userData.type)) {
+            part.rotation.set(0, part.userData.type==='gear'?Math.PI/2:0, 0); 
+        } else { part.rotation.copy(snap.rotation); }
+        if (part.userData.type === 'cover_green') part.scale.y = 1.0;
+        
+        // Restore opacity
+        part.traverse(c => { if (c.isMesh) { 
+            c.material = Array.isArray(c.material) ? c.material : [c.material];
+            c.material.forEach(m => { m.transparent = false; m.opacity = 1.0; });
+        }});
+        
+        part.userData.isInstalled = true; part.userData.grabbedBy = -1; 
+        snap.userData.occupied = true; snap.visible = false;
+        this.installedCount++; this.updateHighlights(null, null); this.updateCounter();
+        Audio.sfxSnap();
+    }
+}
