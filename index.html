@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>TNTU SUITE v13 [FULL MODULAR]</title>
+    
+    <style>
+        :root {
+            --primary: #00ffcc;
+            --secondary: #0088aa;
+            --bg: #020202;
+            --font: 'Segoe UI', system-ui, sans-serif;
+            --mono: 'Consolas', monospace;
+        }
+        body { margin: 0; overflow: hidden; background: var(--bg); font-family: var(--font); color: var(--primary); }
+        
+        /* --- BOOT SCREEN --- */
+        #boot-layer {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: radial-gradient(circle at center, #111 0%, #000 100%);
+            z-index: 10000; display: flex; justify-content: center; align-items: center;
+            transition: opacity 0.8s ease-out;
+        }
+        .boot-panel {
+            width: 90%; max-width: 450px; background: rgba(20, 20, 20, 0.95);
+            border: 1px solid #333; border-radius: 16px; padding: 30px;
+            text-align: center; box-shadow: 0 0 60px rgba(0, 255, 204, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        h1 { margin: 0 0 25px 0; font-size: 26px; letter-spacing: 3px; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 15px; text-shadow: 0 0 15px var(--primary); }
+        
+        .train-link {
+            display: flex; align-items: center; justify-content: center; width: 100%; padding: 15px;
+            background: rgba(0, 255, 204, 0.05); border: 1px solid var(--primary);
+            color: var(--primary); text-decoration: none; font-weight: bold; border-radius: 8px;
+            margin-bottom: 25px; transition: all 0.2s; text-transform: uppercase; font-size: 14px;
+        }
+        .train-link:hover { background: var(--primary); color: #000; box-shadow: 0 0 20px var(--primary); }
+
+        .file-area {
+            border: 2px dashed #444; border-radius: 8px; padding: 20px; margin-bottom: 25px;
+            background: rgba(0,0,0,0.3); text-align: left;
+        }
+        .label { display: block; font-size: 12px; color: #888; margin-bottom: 8px; text-transform: uppercase; }
+        input[type="file"] { display: block; width: 100%; margin-bottom: 10px; font-size: 12px; color: #ccc; }
+        
+        #btn-launch {
+            width: 100%; padding: 18px;
+            background: linear-gradient(135deg, #004433 0%, #006644 100%);
+            color: #fff; border: 1px solid var(--primary);
+            font-size: 20px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase;
+            cursor: pointer; transition: all 0.3s; border-radius: 8px;
+        }
+        #btn-launch:hover { background: var(--primary); color: #000; box-shadow: 0 0 30px var(--primary); }
+        #btn-launch:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+        
+        #boot-log { font-family: var(--mono); color: #008844; font-size: 12px; margin-top: 15px; min-height: 20px; }
+
+        /* --- MAIN UI --- */
+        #viewport { position: relative; width: 100vw; height: 100vh; }
+        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        video { transform: scaleX(-1); filter: grayscale(40%) contrast(110%) brightness(60%); z-index: 0; }
+        #webgl-canvas { z-index: 10; }
+        
+        #hud-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none; }
+        #ai-debug {
+            position: absolute; top: 20px; right: 20px;
+            font-family: var(--mono); font-size: 12px; color: rgba(0,255,204,0.7);
+            background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 4px; text-align: right;
+        }
+        
+        .counter-container {
+            position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 5, 10, 0.6); border: 1px solid var(--primary);
+            border-radius: 15px; padding: 5px 20px; backdrop-filter: blur(5px);
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.1);
+        }
+        #part-counter { font-family: var(--mono); font-size: 14px; font-weight: 700; color: #fff; text-shadow: 0 0 5px var(--primary); }
+        #part-counter.green { color: #0f0; text-shadow: 0 0 15px #0f0; }
+        #part-counter.yellow { color: #ff0; text-shadow: 0 0 15px #ff0; }
+        #part-counter.red { color: #f00; text-shadow: 0 0 15px #f00; }
+
+        #victory-screen {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.9);
+            text-align: center; background: rgba(0, 20, 10, 0.95); padding: 60px 80px;
+            border: 2px solid #00ff00; border-radius: 20px; box-shadow: 0 0 60px rgba(0, 255, 0, 0.2);
+            display: none; opacity: 0; transition: all 0.6s; z-index: 100;
+        }
+        #victory-screen.active { opacity: 1; transform: translate(-50%, -50%) scale(1); display: block; }
+    </style>
+
+    <!-- LIBS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+</head>
+<body>
+
+    <div id="boot-layer">
+        <div class="boot-panel">
+            <h1>TNTU ENGINEERING CORE</h1>
+            <a href="https://kaftntu.github.io/Neiro/" target="_blank" class="train-link">🎓 Навчити свою модель</a>
+            
+            <div class="file-area">
+                <span class="label">Кастомна модель (JSON + BIN):</span>
+                <input type="file" id="model-upload" accept=".json">
+                <input type="file" id="weights-upload" accept=".bin">
+                <div style="font-size: 10px; color: #666; margin-top: 5px;">* Якщо пусто - завантажиться стандартна.</div>
+            </div>
+
+            <button id="btn-launch">🚀 АКТИВУВАТИ СИСТЕМУ</button>
+            <div id="boot-log">Очікування команд...</div>
+        </div>
+    </div>
+
+    <div id="viewport">
+        <video id="video-background" playsinline muted></video>
+        <canvas id="webgl-canvas"></canvas>
+        <div id="hud-layer">
+            <div id="ai-debug">AI: INIT...</div>
+            <div class="counter-container"><span id="part-counter">0 / 0</span></div>
+        </div>
+        <div id="victory-screen">
+            <h1 style="color: #00ff00; font-size: 30px; margin: 0;">УСПІХ!</h1>
+            <div style="color: #fff; margin-top: 10px;">СИСТЕМУ ЗІБРАНО</div>
+        </div>
+    </div>
+
+    <!-- MAIN MODULE -->
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>
