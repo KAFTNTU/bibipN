@@ -1,3 +1,4 @@
+// --- НЕЙРОМЕРЕЖА (GESTURE CLASSIFIER) ---
 export class GestureClassifier {
     constructor() {
         this.model = null;
@@ -8,23 +9,40 @@ export class GestureClassifier {
     }
 
     async load(customFiles = null) {
+        this.isReady = false;
         try {
-            if (customFiles) {
-                console.log("Loading custom model...");
+            // ПРІОРИТЕТ 1: КОРИСТУВАЦЬКА МОДЕЛЬ
+            if (customFiles && customFiles.length === 2) {
+                console.log("%c📂 ЗАВАНТАЖЕННЯ ВАШОЇ МОДЕЛІ...", "color: #00ffcc; font-weight: bold;");
+                
+                // tf.io.browserFiles дозволяє завантажити файли, вибрані через <input type="file">
                 this.model = await tf.loadLayersModel(tf.io.browserFiles(customFiles));
-                console.log("✅ Custom Model Loaded");
-            } else {
-                console.log("Loading default model from ./AI/...");
+                
+                console.log("%c✅ ВАША МОДЕЛЬ АКТИВОВАНА", "color: #00ff00; font-weight: bold;");
+            } 
+            // ПРІОРИТЕТ 2: СТАНДАРТНА МОДЕЛЬ (якщо файли не вибрані)
+            else {
+                console.log("%c🌐 ЗАВАНТАЖЕННЯ СТАНДАРТНОЇ МОДЕЛІ...", "color: #aaaaaa;");
                 this.model = await tf.loadLayersModel('./AI/gesture-model.json');
-                console.log("✅ Default Model Loaded");
+                console.log("✅ СТАНДАРТНА МОДЕЛЬ АКТИВОВАНА");
             }
+            
             this.isReady = true;
+            
+            // "Прогрів" моделі (перший запуск, щоб гра не гальмувала потім)
             const dummy = tf.zeros([1, 63]);
             this.model.predict(dummy).dispose();
             dummy.dispose();
+            
             return true;
         } catch (e) {
-            console.error("AI Load Error:", e);
+            console.error("❌ ПОМИЛКА ЗАВАНТАЖЕННЯ:", e);
+            const debugEl = document.getElementById('ai-debug');
+            if(debugEl) {
+                debugEl.innerText = "AI ERROR";
+                debugEl.style.color = "#ff4444";
+            }
+            alert("Помилка завантаження моделі. Перевірте консоль (F12) або відповідність JSON та BIN файлів.");
             return false;
         }
     }
@@ -45,6 +63,7 @@ export class GestureClassifier {
 
     predict(landmarks) {
         if (!this.isReady || !this.model) return 'Idle';
+
         return tf.tidy(() => {
             const input = tf.tensor2d([this.preprocess(landmarks)]);
             const pred = this.model.predict(input);
@@ -56,8 +75,11 @@ export class GestureClassifier {
             
             const counts = {};
             this.history.forEach(h => counts[h.idx] = (counts[h.idx] || 0) + 1);
+            
             const stableIdx = parseInt(Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b));
-            return this.classes[stableIdx];
+            const result = this.classes[stableIdx];
+            
+            return result;
         });
     }
 }
