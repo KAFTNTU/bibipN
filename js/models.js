@@ -1,7 +1,6 @@
 import { CONFIG, TEXTURE_URLS } from './config.js';
 
 const textureLoader = new THREE.TextureLoader();
-// ВАЖЛИВО: Переконайтесь, що GLTFLoader підключено в index.html
 const gltfLoader = new THREE.GLTFLoader(); 
 
 export const textures = { top: null, long: null, short: null, chassis: null };
@@ -72,21 +71,23 @@ export class ModelFactory {
             gltfLoader.load(MODEL_PATH, (gltf) => {
                 const model = gltf.scene;
                 
-                // Масштабування (підберіть число, якщо модель занадто велика/мала)
-                // Зазвичай моделі в метрах, а тут сцена маленька, тому 0.025 може бути ок, або 1.0 якщо модель вже в масштабі
+                // Масштаб
                 const s = 0.025; 
                 model.scale.set(s, s, s);
 
-                // --- ВИРІВНЮВАННЯ ПОЗИЦІЇ ---
-                // Ми обчислюємо коробку навколо моделі, щоб знайти її низ
+                // --- ВИПРАВЛЕННЯ ОРІЄНТАЦІЇ (Щоб стояв | а не лежав __) ---
+                model.rotation.x = -Math.PI / 2;
+                
+                // Оновлюємо матрицю перед розрахунком коробки, щоб врахувати поворот
+                model.updateMatrixWorld();
+
+                // --- ЦЕНТРУВАННЯ ---
                 const box = new THREE.Box3().setFromObject(model);
                 const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
 
-                // Зсуваємо модель так, щоб її НИЗ (min.y) став на рівень 0 по Y
-                // і щоб вона була по центру по X та Z
-                model.position.x += (model.position.x - center.x);
-                model.position.z += (model.position.z - center.z);
+                // Зсуваємо так, щоб центр був по (0, Y, 0), а низ (min.y) на рівні 0
+                model.position.x += (0 - center.x);
+                model.position.z += (0 - center.z);
                 model.position.y -= box.min.y;
 
                 // Тіні
@@ -100,8 +101,7 @@ export class ModelFactory {
                 group.add(model);
                 
             }, undefined, (error) => {
-                console.error('Помилка завантаження sensor.glb:', error);
-                // Запасний кубик, якщо файл не знайдено
+                console.error('Помилка:', error);
                 const errorBox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.2), new THREE.MeshBasicMaterial({color: 0xff0000}));
                 errorBox.position.y = 0.25;
                 group.add(errorBox);
