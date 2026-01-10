@@ -77,8 +77,7 @@ export class ModelFactory {
                 model.scale.set(s, s, s);
 
                 // --- ВИПРАВЛЕННЯ ОРІЄНТАЦІЇ ---
-                // 1. rotation.x = -Math.PI/2 -> Піднімаємо (ставимо на ноги)
-                // 2. rotation.z = Math.PI -> Розвертаємо на 180 градусів (обличчям в інший бік)
+                // Піднімаємо (на ноги) і розвертаємо обличчям назад
                 model.rotation.set(-Math.PI / 2, 0, Math.PI);
                 
                 model.updateMatrixWorld();
@@ -316,9 +315,10 @@ export class SceneGraph {
         preview.scale.setScalar(0.7);
         preview.position.set(0, 0.5, 0);
         
+        // ✅ ВИПРАВЛЕНО: Шестерня тепер стоїть вертикально, "обличчям" до гравця
         if (type === 'gear') {
-            preview.rotation.x = -Math.PI / 2; 
-            preview.position.y = 0.6;
+            preview.rotation.set(0, 0, 0); // Без поворотів = стоїть вертикально
+            preview.position.y = 0.6; 
         }
 
         preview.traverse(c => {
