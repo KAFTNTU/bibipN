@@ -25,16 +25,16 @@ export class GameLogic {
         [-1.0, 0.0, 1.0].forEach(z => this.createSnap('gear', new THREE.Vector3(-1.25, 0, z), 'SIDE'));
         [-1.2, -0.4, 0.4, 1.2].forEach(z => this.createSnap('gear', new THREE.Vector3(1.25, 0, z), 'SIDE'));
 
-        // this.createSnap('board', new THREE.Vector3(0, 0.08, -1.0), 'TOP'); // ПЛАТУ ВИДАЛЕНО
+        // ✅ ВИПРАВЛЕНО: Батарейки по центру (X=0.15 / -0.15) і підняті (Y=0.35), щоб влізли в корпус
+        this.createSnap('battery', new THREE.Vector3(0.15, 0.35, 0.0), 'TOP');
+        this.createSnap('battery', new THREE.Vector3(-0.15, 0.35, 0.0), 'TOP');
         
-        this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8), 'BOT');
-        this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8), 'BOT');
         this.createSnap('cover_green', new THREE.Vector3(0, 0.50, 0), 'TOP');
         
+        // Мотори
         this.createSnap('motor', new THREE.Vector3(0.58, 0, -1.2), 'TOP'); 
         this.createSnap('motor', new THREE.Vector3(-0.58, 0, 1.2), 'TOP'); 
         
-        // СЕНСОР (HC-SR04)
         this.createSnap('sensor', new THREE.Vector3(0, 0.95, 1.8), 'TOP');
 
         this.spawnLooseParts();
@@ -54,7 +54,7 @@ export class GameLogic {
         else if(type === 'wheel') ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
         else if(type === 'battery') ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
         else if(type === 'cover_green') ghostGeo = new THREE.BoxGeometry(1.9, 0.8, 4.0);
-        else if(type === 'sensor') ghostGeo = new THREE.BoxGeometry(1.0, 0.5, 0.1); // Привид під датчик
+        else if(type === 'sensor') ghostGeo = new THREE.BoxGeometry(1.0, 0.5, 0.1);
         else ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
 
         if(['gear', 'wheel'].includes(type)) snap.rotation.z = Math.PI/2;
@@ -82,7 +82,6 @@ export class GameLogic {
             const part = ModelFactory.createPart(type);
             part.position.set(0, 5, 0);
             if (type === 'cover_green') part.scale.y = 0.2; 
-            
             part.userData.type = type;
             part.userData.isInstalled = false;
             part.userData.inInventory = true; 
