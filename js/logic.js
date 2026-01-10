@@ -25,17 +25,18 @@ export class GameLogic {
         [-1.0, 0.0, 1.0].forEach(z => this.createSnap('gear', new THREE.Vector3(-1.25, 0, z), 'SIDE'));
         [-1.2, -0.4, 0.4, 1.2].forEach(z => this.createSnap('gear', new THREE.Vector3(1.25, 0, z), 'SIDE'));
 
-        // ✅ ВИПРАВЛЕНО: Батарейки по центру (X=0.15 / -0.15) і підняті (Y=0.35), щоб влізли в корпус
         this.createSnap('battery', new THREE.Vector3(0.15, 0.35, 0.0), 'TOP');
         this.createSnap('battery', new THREE.Vector3(-0.15, 0.35, 0.0), 'TOP');
         
         this.createSnap('cover_green', new THREE.Vector3(0, 0.50, 0), 'TOP');
         
-        // Мотори
         this.createSnap('motor', new THREE.Vector3(0.58, 0, -1.2), 'TOP'); 
         this.createSnap('motor', new THREE.Vector3(-0.58, 0, 1.2), 'TOP'); 
         
-        this.createSnap('sensor', new THREE.Vector3(0, 0.95, 1.8), 'TOP');
+        // --- СЕНСОР ---
+        // Y = 0.9 (це точна висота поверхні кришки: 0.5 центр + 0.4 половина висоти)
+        // Тепер, коли модель вирівняна в models.js, вона повинна стояти ідеально
+        this.createSnap('sensor', new THREE.Vector3(0, 0.9, 1.8), 'TOP');
 
         this.spawnLooseParts();
         this.setupDispensers();
@@ -54,7 +55,7 @@ export class GameLogic {
         else if(type === 'wheel') ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
         else if(type === 'battery') ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
         else if(type === 'cover_green') ghostGeo = new THREE.BoxGeometry(1.9, 0.8, 4.0);
-        else if(type === 'sensor') ghostGeo = new THREE.BoxGeometry(1.0, 0.5, 0.1);
+        else if(type === 'sensor') ghostGeo = new THREE.BoxGeometry(1.0, 0.5, 0.25);
         else ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
 
         if(['gear', 'wheel'].includes(type)) snap.rotation.z = Math.PI/2;
@@ -64,6 +65,10 @@ export class GameLogic {
             color: CONFIG.THEME.GHOST_VALID, wireframe: true, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false
         });
         const ghost = new THREE.Mesh(ghostGeo, ghostMat);
+        
+        // Піднімаємо гост, щоб він теж візуально стояв НА кришці
+        if (type === 'sensor') ghost.position.y = 0.25;
+
         ghost.visible = false;
         snap.add(ghost);
 
@@ -121,16 +126,19 @@ export class GameLogic {
     }
 
     updateCounter() {
-        document.getElementById('part-counter').innerText = `${this.installedCount} / ${this.totalParts}`;
+        const el = document.getElementById('part-counter');
+        if(el) el.innerText = `${this.installedCount} / ${this.totalParts}`;
         if(this.installedCount === this.totalParts) this.triggerWin();
     }
 
     checkSnap(part, partPos) {
         let bestSnap = null; let limit = 1.5; 
+        
         if (part.userData.type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) return null; 
         }
+
         for (const snap of this.snaps) {
             if (snap.userData.occupied) continue;
             if (snap.userData.type !== part.userData.type) continue;
@@ -194,7 +202,11 @@ export class GameLogic {
         
         if (part.userData.type === 'gear') {
             part.rotation.set(0, Math.PI/2, 0);
-        } else if (['wheel', 'sensor'].includes(part.userData.type)) {
+        } else if (part.userData.type === 'sensor') {
+            // Виправлено: Модель сама по собі (з models.js) тепер вже дивиться куди треба
+            // Якщо все одно дивиться вбік, змініть тут на Math.PI/2 або -Math.PI/2
+            part.rotation.set(0, Math.PI, 0); // Розвернути до користувача
+        } else if (part.userData.type === 'wheel') {
             part.rotation.set(0, 0, 0); 
         } else {
             part.rotation.copy(snap.rotation);
@@ -229,6 +241,7 @@ export class GameLogic {
 
     triggerWin() {
         Audio.sfxVictory();
-        document.getElementById('victory-screen').classList.add('active');
+        const winScreen = document.getElementById('victory-screen');
+        if (winScreen) winScreen.classList.add('active');
     }
 }
