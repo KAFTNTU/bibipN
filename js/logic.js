@@ -33,8 +33,8 @@ export class GameLogic {
         this.createSnap('motor', new THREE.Vector3(0.58, 0, -1.2), 'TOP'); 
         this.createSnap('motor', new THREE.Vector3(-0.58, 0, 1.2), 'TOP'); 
         
-        // Сенсор
-        this.createSnap('sensor', new THREE.Vector3(0, 0.9, 1.8), 'TOP');
+        // ✅ ВИПРАВЛЕНО: Сенсор посунув на самий край (Z=1.95), щоб стояв на грані кришки
+        this.createSnap('sensor', new THREE.Vector3(0, 0.9, 1.95), 'TOP');
 
         this.spawnLooseParts();
         this.setupDispensers();
@@ -200,7 +200,6 @@ export class GameLogic {
         if (part.userData.type === 'gear') {
             part.rotation.set(0, Math.PI/2, 0);
         } else if (part.userData.type === 'sensor') {
-            // Модель вже розвернута в models.js, тому тут просто 0,0,0
             part.rotation.set(0, 0, 0); 
         } else if (part.userData.type === 'wheel') {
             part.rotation.set(0, 0, 0); 
