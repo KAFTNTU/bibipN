@@ -200,8 +200,7 @@ export class GameLogic {
         if (part.userData.type === 'gear') {
             part.rotation.set(0, Math.PI/2, 0);
         } else if (part.userData.type === 'sensor') {
-            // Тепер ми просто повертаємо його навколо вертикальної осі Y, 
-            // якщо треба, щоб очі дивилися назад чи вперед. 0 або PI.
+            // Модель вже розвернута в models.js, тому тут просто 0,0,0
             part.rotation.set(0, 0, 0); 
         } else if (part.userData.type === 'wheel') {
             part.rotation.set(0, 0, 0); 
