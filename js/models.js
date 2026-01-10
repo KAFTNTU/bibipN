@@ -47,20 +47,14 @@ export class ModelFactory {
             case 'copper': return new THREE.MeshStandardMaterial({color: 0xb87333, metalness: 0.7, roughness: 0.2});
             case 'battery_body': return new THREE.MeshStandardMaterial({color: 0xffaa00, metalness: 0.3, roughness: 0.4});
             case 'rubber': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9, flatShading: true});
-            case 'screen': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.1, metalness: 0.8});
-            case 'button_red': return new THREE.MeshStandardMaterial({color: 0xff3333});
-            
             case 'sensor_body': return new THREE.MeshStandardMaterial({color: 0x0055ff, roughness: 0.5});
-            case 'sensor_eye': return new THREE.MeshStandardMaterial({color: 0xeeeeee, metalness: 0.1, roughness: 0.1});
-            case 'sensor_pupil': return new THREE.MeshBasicMaterial({color: 0x000000});
-            // --- MOTOR MATERIALS ---
+            
             case 'frame_plastic': return new THREE.MeshStandardMaterial({color: 0x333333, roughness: 0.7, metalness: 0.1});
             case 'dark_plastic': return new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.7, metalness: 0.1});
             case 'port_gray': return new THREE.MeshStandardMaterial({color: 0x666666, roughness: 0.5});
-            case 'gold': return new THREE.MeshStandardMaterial({color: 0xffd700, metalness: 0.9, roughness: 0.2});
-            case 'black_void': return new THREE.MeshBasicMaterial({color: 0x000000});
-            case 'port_black': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.4});
             case 'orange': return new THREE.MeshStandardMaterial({color: 0xff6600, roughness: 0.6});
+            case 'port_black': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.4});
+            
             default: return new THREE.MeshBasicMaterial({color: 0xffffff});
         }
     }
@@ -71,21 +65,29 @@ export class ModelFactory {
         hitBox.userData.isHitbox = true;
         group.add(hitBox);
 
-        // --- ДАТЧИК (GLB) ---
+        // --- ДАТЧИК (ЗАВАНТАЖЕННЯ GLB) ---
         if (type === 'sensor') {
             const MODEL_PATH = './models/sensor.glb'; 
             
             gltfLoader.load(MODEL_PATH, (gltf) => {
                 const model = gltf.scene;
                 
-                // ✅ ВИПРАВЛЕНО: МАСШТАБ ЗБІЛЬШЕНО (0.001 * 25 = 0.025)
+                // Масштабування (підберіть число, якщо модель занадто велика/мала)
+                // Зазвичай моделі в метрах, а тут сцена маленька, тому 0.025 може бути ок, або 1.0 якщо модель вже в масштабі
                 const s = 0.025; 
                 model.scale.set(s, s, s);
 
-                // Центрування
+                // --- ВИРІВНЮВАННЯ ПОЗИЦІЇ ---
+                // Ми обчислюємо коробку навколо моделі, щоб знайти її низ
                 const box = new THREE.Box3().setFromObject(model);
                 const center = box.getCenter(new THREE.Vector3());
-                model.position.sub(center);
+                const size = box.getSize(new THREE.Vector3());
+
+                // Зсуваємо модель так, щоб її НИЗ (min.y) став на рівень 0 по Y
+                // і щоб вона була по центру по X та Z
+                model.position.x += (model.position.x - center.x);
+                model.position.z += (model.position.z - center.z);
+                model.position.y -= box.min.y;
 
                 // Тіні
                 model.traverse((child) => {
@@ -98,9 +100,10 @@ export class ModelFactory {
                 group.add(model);
                 
             }, undefined, (error) => {
-                console.error('Помилка завантаження датчика:', error);
-                // Запасний варіант (щоб було видно хоч щось)
-                const errorBox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.2), new THREE.MeshBasicMaterial({color: 0x0000ff}));
+                console.error('Помилка завантаження sensor.glb:', error);
+                // Запасний кубик, якщо файл не знайдено
+                const errorBox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.2), new THREE.MeshBasicMaterial({color: 0xff0000}));
+                errorBox.position.y = 0.25;
                 group.add(errorBox);
             });
 
@@ -133,7 +136,6 @@ export class ModelFactory {
                 gearGeom.translate(0, 0, -thickness/2);
                 const gearBody = new THREE.Mesh(gearGeom, this.getMaterial('plastic'));
                 
-                // Додаємо вісь, щоб краще було видно на генераторі
                 const gearAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.2, 8), this.getMaterial('metal'));
                 gearAxis.rotation.x = Math.PI/2;
 
@@ -156,17 +158,6 @@ export class ModelFactory {
                     group.add(bolt);
                 }
                 group.add(wTire, wRim);
-                break;
-
-            case 'board':
-                const pcb = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), this.getMaterial('pcb'));
-                const chip1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.2), this.getMaterial('chip'));
-                chip1.position.set(0.2, 0, 0);
-                const chip2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.3), this.getMaterial('chip'));
-                chip2.position.set(-0.2, 0, 0);
-                const pins = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.05), this.getMaterial('metal'));
-                pins.position.set(0, 0, 0.2);
-                group.add(pcb, chip1, chip2, pins);
                 break;
 
             case 'battery':
@@ -216,24 +207,14 @@ export class ModelFactory {
                 const motRad = 0.35;
                 const frontLen = motLen * 0.3;
                 const rearLen = motLen * 0.7;
-
-                // 1. ЗАДНЯ ЧАСТИНА
                 const cylRear = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, rearLen, 32), this.getMaterial('frame_plastic'));
                 cylRear.rotation.z = Math.PI / 2; cylRear.position.x = - (frontLen / 2); group.add(cylRear);
-
-                // 2. ПЕРЕДНЯ ЧАСТИНА
                 const cylFront = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, frontLen, 32), this.getMaterial('dark_plastic'));
                 cylFront.rotation.z = Math.PI / 2; cylFront.position.x = (rearLen / 2); group.add(cylFront);
-
-                // 3. БОКС
                 const box = new THREE.Mesh(new THREE.BoxGeometry(motLen * 0.6, motRad * 2.2, motRad * 1.6), this.getMaterial('frame_plastic'));
                 group.add(box);
-
-                // 4. ВАЛ
                 const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, motLen*0.6, 16), this.getMaterial('orange'));
                 shaft.rotation.z = Math.PI / 2; shaft.position.x = motLen / 2 + 0.1; group.add(shaft);
-
-                // 5. ВУХА КРІПЛЕННЯ (Щоб було краще видно)
                 const holeGroup = new THREE.Group();
                 holeGroup.position.x = motLen/2;
                 const earGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.1, 8);
@@ -241,7 +222,6 @@ export class ModelFactory {
                 const ear2 = new THREE.Mesh(earGeo, this.getMaterial('port_black')); ear2.position.z = -0.25; ear2.rotation.x=Math.PI/2;
                 holeGroup.add(ear1, ear2);
                 group.add(holeGroup);
-
                 break;
             }
         }
@@ -284,7 +264,6 @@ export class SceneGraph {
 
     initChassis() {
         const frameMat = new THREE.MeshStandardMaterial({ color: CONFIG.THEME.CHASSIS_COLOR, roughness: 0.7, metalness: 0.1 });
-        const holeMat = new THREE.MeshBasicMaterial({color: 0x111111});
         const frameGroup = new THREE.Group();
         this.worldRoot.add(frameGroup);
 
@@ -336,10 +315,9 @@ export class SceneGraph {
         preview.scale.setScalar(0.7);
         preview.position.set(0, 0.5, 0);
         
-        // ✅ ВИПРАВЛЕНО: Якщо це шестерня, повертаємо її, щоб було видно
         if (type === 'gear') {
-            preview.rotation.x = -Math.PI / 2; // Ставимо її "на попа" або плазом, але вище
-            preview.position.y = 0.6; // Піднімаємо вище над базою
+            preview.rotation.x = -Math.PI / 2; 
+            preview.position.y = 0.6;
         }
 
         preview.traverse(c => {
