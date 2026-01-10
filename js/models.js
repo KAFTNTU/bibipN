@@ -1,6 +1,9 @@
 import { CONFIG, TEXTURE_URLS } from './config.js';
 
 const textureLoader = new THREE.TextureLoader();
+// Ініціалізація завантажувача GLTF (він має бути підключений в index.html)
+const gltfLoader = new THREE.GLTFLoader();
+
 export const textures = { top: null, long: null, short: null, chassis: null };
 
 function loadTex(url) {
@@ -41,11 +44,9 @@ export class ModelFactory {
             case 'pcb': return new THREE.MeshStandardMaterial({color: 0x004400, roughness: 0.3});
             case 'chip': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.1});
             case 'plastic': return new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.5});
-            // MISSING IN UPLOADED FILES, RESTORED FROM INDEX 29:
             case 'copper': return new THREE.MeshStandardMaterial({color: 0xb87333, metalness: 0.7, roughness: 0.2});
             case 'battery_body': return new THREE.MeshStandardMaterial({color: 0xffaa00, metalness: 0.3, roughness: 0.4});
             case 'rubber': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9, flatShading: true});
-            // MISSING IN UPLOADED FILES, RESTORED FROM INDEX 29:
             case 'screen': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.1, metalness: 0.8});
             case 'button_red': return new THREE.MeshStandardMaterial({color: 0xff3333});
             
@@ -69,6 +70,41 @@ export class ModelFactory {
         const hitBox = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshBasicMaterial({visible:false}));
         hitBox.userData.isHitbox = true;
         group.add(hitBox);
+
+        // --- СПЕЦІАЛЬНЕ ЗАВАНТАЖЕННЯ ДЛЯ СЕНСОРА ---
+        if (type === 'sensor') {
+            // Шлях до файлу (має бути в папці models)
+            gltfLoader.load('./models/sensor.glb', (gltf) => {
+                const model = gltf.scene;
+                
+                // Масштаб (0.001 для SolidWorks/mm)
+                const s = 0.001; 
+                model.scale.set(s, s, s);
+
+                // Центрування
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                model.position.sub(center);
+
+                // Тіні
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                group.add(model);
+            }, undefined, (e) => {
+                console.error("Не вдалося завантажити sensor.glb:", e);
+                // Запасний варіант (червоний куб), якщо файл не знайдено
+                const errBox = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.2,0.1), new THREE.MeshBasicMaterial({color:0xff0000}));
+                group.add(errBox);
+            });
+
+            group.userData = { isPart: true, parentGroup: group, grabbedBy: -1 };
+            return group;
+        }
 
         switch(type) {
             case 'gear':
@@ -94,48 +130,70 @@ export class ModelFactory {
                 const gearGeom = new THREE.ExtrudeGeometry(gearShape, extrudeSettings);
                 gearGeom.translate(0, 0, -thickness/2);
                 const gearBody = new THREE.Mesh(gearGeom, this.getMaterial('plastic'));
-                const innerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, thickness + 0.02, 16), this.getMaterial('metal'));
-                innerRing.rotation.x = Math.PI / 2;
-                const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, thickness + 0.04, 8), new THREE.MeshBasicMaterial({color: 0x222222}));
-                pin.rotation.x = Math.PI / 2;
+                
+                // Спрощена шестерня (без зайвих деталей всередині)
                 const gearVisGroup = new THREE.Group();
-                gearVisGroup.add(gearBody, innerRing, pin);
+                gearVisGroup.add(gearBody);
                 group.add(gearVisGroup);
                 break;
 
             case 'wheel':
-                const wGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 24); 
-                wGeo.rotateZ(Math.PI / 2);
-                const wTire = new THREE.Mesh(wGeo, this.getMaterial('rubber'));
-                const wRim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.26, 16), this.getMaterial('metal'));
-                wRim.rotation.z = Math.PI / 2;
+                // Оновлене колесо (з протектором та заглибленим диском)
+                const tireRadius = 0.5;
+                const tireWidth = 0.26;
+                const rubberMat = this.getMaterial('rubber');
+                
+                // 4 Кільця гуми (імітація протектора)
+                const segmentWidth = tireWidth / 4; 
+                const gap = 0.02;
                 for(let i=0; i<4; i++) {
-                    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.28, 6), this.getMaterial('dark_metal'));
+                    const w = (i===0 || i===3) ? segmentWidth : segmentWidth - gap;
+                    const segment = new THREE.Mesh(new THREE.CylinderGeometry(tireRadius, tireRadius, w, 32), rubberMat);
+                    segment.rotation.z = Math.PI/2;
+                    segment.position.x = (i - 1.5) * segmentWidth;
+                    group.add(segment);
+                }
+                
+                // Чорна основа
+                const innerCore = new THREE.Mesh(new THREE.CylinderGeometry(tireRadius - 0.02, tireRadius - 0.02, tireWidth - 0.02, 32), this.getMaterial('black_void'));
+                innerCore.rotation.z = Math.PI/2;
+                group.add(innerCore);
+
+                // Диск (заглиблений)
+                const rimWidth = 0.15;
+                const wRim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, rimWidth, 32), this.getMaterial('metal'));
+                wRim.rotation.z = Math.PI / 2;
+                group.add(wRim);
+
+                // Болти
+                for(let i=0; i<5; i++) {
+                    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.04, 8), this.getMaterial('dark_metal'));
                     bolt.rotation.z = Math.PI / 2;
-                    const a = (i/4)*Math.PI*2;
-                    bolt.position.set(0, Math.cos(a)*0.15, Math.sin(a)*0.15);
+                    const a = (i/5)*Math.PI*2;
+                    bolt.position.set(rimWidth/2 + 0.01, Math.cos(a)*0.18, Math.sin(a)*0.18);
                     group.add(bolt);
                 }
-                group.add(wTire, wRim);
+                // Гайка
+                const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.06, 6), this.getMaterial('dark_metal'));
+                nut.rotation.z = Math.PI / 2;
+                nut.position.x = rimWidth/2 + 0.01;
+                group.add(nut);
                 break;
 
             case 'board':
-                const pcb = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), this.getMaterial('pcb'));
-                const chip1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.2), this.getMaterial('chip'));
-                chip1.position.set(0.2, 0, 0);
-                const chip2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.3), this.getMaterial('chip'));
-                chip2.position.set(-0.2, 0, 0);
-                const pins = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.05), this.getMaterial('metal'));
-                pins.position.set(0, 0, 0.2);
-                group.add(pcb, chip1, chip2, pins);
+                // ПЛАТА ВИДАЛЕНА З ІГРИ, АЛЕ ЗАЛИШЕНА ТУТ ЯК ЗАГЛУШКА, ЩОБ НЕ БУЛО ПОМИЛОК
                 break;
 
             case 'battery':
+                // Батарейка (піднята вище)
+                const elevation = 1.0; 
                 const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.6, 16), this.getMaterial('battery_body'));
                 bat.rotation.z = Math.PI / 2;
+                bat.position.y = elevation; // Піднято
                 const posTerm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12), this.getMaterial('metal'));
                 posTerm.rotation.z = Math.PI / 2;
                 posTerm.position.x = 0.32;
+                posTerm.position.y = elevation; // Піднято
                 group.add(bat, posTerm);
                 break;
 
@@ -178,35 +236,22 @@ export class ModelFactory {
                 const frontLen = motLen * 0.3;
                 const rearLen = motLen * 0.7;
 
-                // 1. ЗАДНЯ ЧАСТИНА (Frame Color)
-                const cylRear = new THREE.Mesh(
-                    new THREE.CylinderGeometry(motRad, motRad, rearLen, 32),
-                    this.getMaterial('frame_plastic')
-                );
+                const cylRear = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, rearLen, 32), this.getMaterial('frame_plastic'));
                 cylRear.rotation.z = Math.PI / 2;
                 cylRear.position.x = - (frontLen / 2); 
                 group.add(cylRear);
 
-                // 2. ПЕРЕДНЯ ЧАСТИНА (Dark Gray)
-                const cylFront = new THREE.Mesh(
-                    new THREE.CylinderGeometry(motRad, motRad, frontLen, 32),
-                    this.getMaterial('dark_plastic')
-                );
+                const cylFront = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, frontLen, 32), this.getMaterial('dark_plastic'));
                 cylFront.rotation.z = Math.PI / 2;
                 cylFront.position.x = (rearLen / 2);
                 group.add(cylFront);
 
-                // 3. ПРЯМОКУТНИК З ПЛАВНИМИ ПЕРЕХОДАМИ
                 const rectHeight = (motRad * 2.2) * 0.85; 
                 const rectDepth = motRad * 1.6;  
                 const boxMainLen = motLen * 0.6; 
-                const box = new THREE.Mesh(
-                    new THREE.BoxGeometry(boxMainLen, rectHeight, rectDepth),
-                    this.getMaterial('frame_plastic')
-                );
+                const box = new THREE.Mesh(new THREE.BoxGeometry(boxMainLen, rectHeight, rectDepth), this.getMaterial('frame_plastic'));
                 group.add(box);
 
-                // Плавні переходи
                 const slopeLen = 0.15;
                 const transitionGeo = new THREE.CylinderGeometry(motRad, Math.max(rectHeight, rectDepth)/1.6, slopeLen, 4);
 
@@ -222,17 +267,12 @@ export class ModelFactory {
                 tFront.scale.set(1, rectDepth/rectHeight, 1);
                 group.add(tFront);
 
-                // 4. ВАЛ (Shaft)
                 const shaftLen = 0.4 * 0.2; 
-                const shaft = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.045, 0.045, shaftLen, 16),
-                    this.getMaterial('orange') 
-                );
+                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, shaftLen, 16), this.getMaterial('orange'));
                 shaft.rotation.z = Math.PI / 2;
                 shaft.position.x = motLen / 2 + shaftLen / 2; 
                 group.add(shaft);
 
-                // 5. 4 ОТВОРИ
                 const holeRad = 0.03;
                 const holeDistance = 0.20; 
                 const holesGroup = new THREE.Group();
@@ -248,7 +288,6 @@ export class ModelFactory {
                 }
                 group.add(holesGroup);
 
-                // 6. ПОРТ ПІДКЛЮЧЕННЯ (RJ45)
                 const portGroup = new THREE.Group();
                 portGroup.position.set(-motLen/2, 0.2, 0); portGroup.rotation.y = Math.PI; 
                 
@@ -267,28 +306,12 @@ export class ModelFactory {
                     pin.position.y = -pHeight * 0.25; pin.position.x = 0.13; 
                     portGroup.add(pin);
                 }
-                
                 const latch = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.06), this.getMaterial('black_void'));
                 latch.position.set(0.13, pHeight * 0.25, 0);
                 portGroup.add(latch);
-
                 group.add(portGroup);
                 break;
             }
-
-            case 'sensor':
-                const sPlate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.1), this.getMaterial('sensor_body'));
-                const eyeL = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.2, 16), this.getMaterial('sensor_eye'));
-                eyeL.rotation.x = Math.PI/2;
-                eyeL.position.set(-0.25, 0, 0.1);
-                const pupilL = new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), this.getMaterial('sensor_pupil'));
-                pupilL.position.set(0, 0.11, 0); 
-                pupilL.rotation.x = -Math.PI/2;
-                eyeL.add(pupilL);
-                const eyeR = eyeL.clone();
-                eyeR.position.set(0.25, 0, 0.1);
-                group.add(sPlate, eyeL, eyeR);
-                break;
         }
 
         group.userData = { isPart: true, parentGroup: group, grabbedBy: -1 };
