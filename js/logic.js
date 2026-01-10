@@ -33,9 +33,7 @@ export class GameLogic {
         this.createSnap('motor', new THREE.Vector3(0.58, 0, -1.2), 'TOP'); 
         this.createSnap('motor', new THREE.Vector3(-0.58, 0, 1.2), 'TOP'); 
         
-        // --- СЕНСОР ---
-        // Y = 0.9 (це точна висота поверхні кришки: 0.5 центр + 0.4 половина висоти)
-        // Тепер, коли модель вирівняна в models.js, вона повинна стояти ідеально
+        // Сенсор
         this.createSnap('sensor', new THREE.Vector3(0, 0.9, 1.8), 'TOP');
 
         this.spawnLooseParts();
@@ -66,7 +64,6 @@ export class GameLogic {
         });
         const ghost = new THREE.Mesh(ghostGeo, ghostMat);
         
-        // Піднімаємо гост, щоб він теж візуально стояв НА кришці
         if (type === 'sensor') ghost.position.y = 0.25;
 
         ghost.visible = false;
@@ -203,9 +200,9 @@ export class GameLogic {
         if (part.userData.type === 'gear') {
             part.rotation.set(0, Math.PI/2, 0);
         } else if (part.userData.type === 'sensor') {
-            // Виправлено: Модель сама по собі (з models.js) тепер вже дивиться куди треба
-            // Якщо все одно дивиться вбік, змініть тут на Math.PI/2 або -Math.PI/2
-            part.rotation.set(0, Math.PI, 0); // Розвернути до користувача
+            // Тепер ми просто повертаємо його навколо вертикальної осі Y, 
+            // якщо треба, щоб очі дивилися назад чи вперед. 0 або PI.
+            part.rotation.set(0, 0, 0); 
         } else if (part.userData.type === 'wheel') {
             part.rotation.set(0, 0, 0); 
         } else {
