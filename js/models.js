@@ -1,6 +1,7 @@
 import { CONFIG, TEXTURE_URLS } from './config.js';
 
 const textureLoader = new THREE.TextureLoader();
+// ВАЖЛИВО: Переконайтесь, що GLTFLoader підключено в index.html
 const gltfLoader = new THREE.GLTFLoader(); 
 
 export const textures = { top: null, long: null, short: null, chassis: null };
@@ -75,22 +76,22 @@ export class ModelFactory {
                 const s = 0.025; 
                 model.scale.set(s, s, s);
 
-                // --- ВИПРАВЛЕННЯ ОРІЄНТАЦІЇ (Щоб стояв | а не лежав __) ---
-                model.rotation.x = -Math.PI / 2;
+                // --- ВИПРАВЛЕННЯ ОРІЄНТАЦІЇ ---
+                // 1. rotation.x = -Math.PI/2 -> Піднімаємо (ставимо на ноги)
+                // 2. rotation.z = Math.PI -> Розвертаємо на 180 градусів (обличчям в інший бік)
+                model.rotation.set(-Math.PI / 2, 0, Math.PI);
                 
-                // Оновлюємо матрицю перед розрахунком коробки, щоб врахувати поворот
                 model.updateMatrixWorld();
 
                 // --- ЦЕНТРУВАННЯ ---
                 const box = new THREE.Box3().setFromObject(model);
                 const center = box.getCenter(new THREE.Vector3());
 
-                // Зсуваємо так, щоб центр був по (0, Y, 0), а низ (min.y) на рівні 0
+                // Зсуваємо так, щоб центр був по (0, Y, 0), а низ на рівні 0
                 model.position.x += (0 - center.x);
                 model.position.z += (0 - center.z);
                 model.position.y -= box.min.y;
 
-                // Тіні
                 model.traverse((child) => {
                     if (child.isMesh) {
                         child.castShadow = true;
