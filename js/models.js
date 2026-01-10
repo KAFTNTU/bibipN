@@ -1,8 +1,8 @@
 import { CONFIG, TEXTURE_URLS } from './config.js';
 
 const textureLoader = new THREE.TextureLoader();
-// Ініціалізація завантажувача GLTF (він має бути підключений в index.html)
-const gltfLoader = new THREE.GLTFLoader();
+// ВАЖЛИВО: Переконайтесь, що GLTFLoader підключено в index.html
+const gltfLoader = new THREE.GLTFLoader(); 
 
 export const textures = { top: null, long: null, short: null, chassis: null };
 
@@ -71,14 +71,15 @@ export class ModelFactory {
         hitBox.userData.isHitbox = true;
         group.add(hitBox);
 
-        // --- СПЕЦІАЛЬНЕ ЗАВАНТАЖЕННЯ ДЛЯ СЕНСОРА ---
+        // --- ДАТЧИК (GLB) ---
         if (type === 'sensor') {
-            // Шлях до файлу (має бути в папці models)
-            gltfLoader.load('./models/sensor.glb', (gltf) => {
+            const MODEL_PATH = './models/sensor.glb'; 
+            
+            gltfLoader.load(MODEL_PATH, (gltf) => {
                 const model = gltf.scene;
                 
-                // Масштаб (0.001 для SolidWorks/mm)
-                const s = 0.001; 
+                // ✅ ВИПРАВЛЕНО: МАСШТАБ ЗБІЛЬШЕНО (0.001 * 25 = 0.025)
+                const s = 0.025; 
                 model.scale.set(s, s, s);
 
                 // Центрування
@@ -95,11 +96,12 @@ export class ModelFactory {
                 });
 
                 group.add(model);
-            }, undefined, (e) => {
-                console.error("Не вдалося завантажити sensor.glb:", e);
-                // Запасний варіант (червоний куб), якщо файл не знайдено
-                const errBox = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.2,0.1), new THREE.MeshBasicMaterial({color:0xff0000}));
-                group.add(errBox);
+                
+            }, undefined, (error) => {
+                console.error('Помилка завантаження датчика:', error);
+                // Запасний варіант (щоб було видно хоч щось)
+                const errorBox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.2), new THREE.MeshBasicMaterial({color: 0x0000ff}));
+                group.add(errorBox);
             });
 
             group.userData = { isPart: true, parentGroup: group, grabbedBy: -1 };
@@ -131,69 +133,48 @@ export class ModelFactory {
                 gearGeom.translate(0, 0, -thickness/2);
                 const gearBody = new THREE.Mesh(gearGeom, this.getMaterial('plastic'));
                 
-                // Спрощена шестерня (без зайвих деталей всередині)
+                // Додаємо вісь, щоб краще було видно на генераторі
+                const gearAxis = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.2, 8), this.getMaterial('metal'));
+                gearAxis.rotation.x = Math.PI/2;
+
                 const gearVisGroup = new THREE.Group();
-                gearVisGroup.add(gearBody);
+                gearVisGroup.add(gearBody, gearAxis);
                 group.add(gearVisGroup);
                 break;
 
             case 'wheel':
-                // Оновлене колесо (з протектором та заглибленим диском)
-                const tireRadius = 0.5;
-                const tireWidth = 0.26;
-                const rubberMat = this.getMaterial('rubber');
-                
-                // 4 Кільця гуми (імітація протектора)
-                const segmentWidth = tireWidth / 4; 
-                const gap = 0.02;
-                for(let i=0; i<4; i++) {
-                    const w = (i===0 || i===3) ? segmentWidth : segmentWidth - gap;
-                    const segment = new THREE.Mesh(new THREE.CylinderGeometry(tireRadius, tireRadius, w, 32), rubberMat);
-                    segment.rotation.z = Math.PI/2;
-                    segment.position.x = (i - 1.5) * segmentWidth;
-                    group.add(segment);
-                }
-                
-                // Чорна основа
-                const innerCore = new THREE.Mesh(new THREE.CylinderGeometry(tireRadius - 0.02, tireRadius - 0.02, tireWidth - 0.02, 32), this.getMaterial('black_void'));
-                innerCore.rotation.z = Math.PI/2;
-                group.add(innerCore);
-
-                // Диск (заглиблений)
-                const rimWidth = 0.15;
-                const wRim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, rimWidth, 32), this.getMaterial('metal'));
+                const wGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 24); 
+                wGeo.rotateZ(Math.PI / 2);
+                const wTire = new THREE.Mesh(wGeo, this.getMaterial('rubber'));
+                const wRim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.26, 16), this.getMaterial('metal'));
                 wRim.rotation.z = Math.PI / 2;
-                group.add(wRim);
-
-                // Болти
-                for(let i=0; i<5; i++) {
-                    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.04, 8), this.getMaterial('dark_metal'));
+                for(let i=0; i<4; i++) {
+                    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.28, 6), this.getMaterial('dark_metal'));
                     bolt.rotation.z = Math.PI / 2;
-                    const a = (i/5)*Math.PI*2;
-                    bolt.position.set(rimWidth/2 + 0.01, Math.cos(a)*0.18, Math.sin(a)*0.18);
+                    const a = (i/4)*Math.PI*2;
+                    bolt.position.set(0, Math.cos(a)*0.15, Math.sin(a)*0.15);
                     group.add(bolt);
                 }
-                // Гайка
-                const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.06, 6), this.getMaterial('dark_metal'));
-                nut.rotation.z = Math.PI / 2;
-                nut.position.x = rimWidth/2 + 0.01;
-                group.add(nut);
+                group.add(wTire, wRim);
                 break;
 
             case 'board':
-                // ПЛАТА ВИДАЛЕНА З ІГРИ, АЛЕ ЗАЛИШЕНА ТУТ ЯК ЗАГЛУШКА, ЩОБ НЕ БУЛО ПОМИЛОК
+                const pcb = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), this.getMaterial('pcb'));
+                const chip1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.2), this.getMaterial('chip'));
+                chip1.position.set(0.2, 0, 0);
+                const chip2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.3), this.getMaterial('chip'));
+                chip2.position.set(-0.2, 0, 0);
+                const pins = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.05), this.getMaterial('metal'));
+                pins.position.set(0, 0, 0.2);
+                group.add(pcb, chip1, chip2, pins);
                 break;
 
             case 'battery':
-                // Батарейка (піднята вище)
-                const elevation = 1.0; 
                 const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.6, 16), this.getMaterial('battery_body'));
                 bat.rotation.z = Math.PI / 2;
-                bat.position.y = elevation; // Піднято
                 const posTerm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12), this.getMaterial('metal'));
                 posTerm.rotation.z = Math.PI / 2;
                 posTerm.position.x = 0.32;
-                posTerm.position.y = elevation; // Піднято
                 group.add(bat, posTerm);
                 break;
 
@@ -236,80 +217,31 @@ export class ModelFactory {
                 const frontLen = motLen * 0.3;
                 const rearLen = motLen * 0.7;
 
+                // 1. ЗАДНЯ ЧАСТИНА
                 const cylRear = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, rearLen, 32), this.getMaterial('frame_plastic'));
-                cylRear.rotation.z = Math.PI / 2;
-                cylRear.position.x = - (frontLen / 2); 
-                group.add(cylRear);
+                cylRear.rotation.z = Math.PI / 2; cylRear.position.x = - (frontLen / 2); group.add(cylRear);
 
+                // 2. ПЕРЕДНЯ ЧАСТИНА
                 const cylFront = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, frontLen, 32), this.getMaterial('dark_plastic'));
-                cylFront.rotation.z = Math.PI / 2;
-                cylFront.position.x = (rearLen / 2);
-                group.add(cylFront);
+                cylFront.rotation.z = Math.PI / 2; cylFront.position.x = (rearLen / 2); group.add(cylFront);
 
-                const rectHeight = (motRad * 2.2) * 0.85; 
-                const rectDepth = motRad * 1.6;  
-                const boxMainLen = motLen * 0.6; 
-                const box = new THREE.Mesh(new THREE.BoxGeometry(boxMainLen, rectHeight, rectDepth), this.getMaterial('frame_plastic'));
+                // 3. БОКС
+                const box = new THREE.Mesh(new THREE.BoxGeometry(motLen * 0.6, motRad * 2.2, motRad * 1.6), this.getMaterial('frame_plastic'));
                 group.add(box);
 
-                const slopeLen = 0.15;
-                const transitionGeo = new THREE.CylinderGeometry(motRad, Math.max(rectHeight, rectDepth)/1.6, slopeLen, 4);
+                // 4. ВАЛ
+                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, motLen*0.6, 16), this.getMaterial('orange'));
+                shaft.rotation.z = Math.PI / 2; shaft.position.x = motLen / 2 + 0.1; group.add(shaft);
 
-                const tRear = new THREE.Mesh(transitionGeo, this.getMaterial('frame_plastic'));
-                tRear.rotation.z = Math.PI / 2; tRear.rotation.x = Math.PI / 4; 
-                tRear.position.x = -boxMainLen/2 - slopeLen/2;
-                tRear.scale.set(1, rectDepth/rectHeight, 1); 
-                group.add(tRear);
+                // 5. ВУХА КРІПЛЕННЯ (Щоб було краще видно)
+                const holeGroup = new THREE.Group();
+                holeGroup.position.x = motLen/2;
+                const earGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.1, 8);
+                const ear1 = new THREE.Mesh(earGeo, this.getMaterial('port_black')); ear1.position.z = 0.25; ear1.rotation.x=Math.PI/2;
+                const ear2 = new THREE.Mesh(earGeo, this.getMaterial('port_black')); ear2.position.z = -0.25; ear2.rotation.x=Math.PI/2;
+                holeGroup.add(ear1, ear2);
+                group.add(holeGroup);
 
-                const tFront = new THREE.Mesh(transitionGeo, this.getMaterial('frame_plastic'));
-                tFront.rotation.z = -Math.PI / 2; tFront.rotation.x = Math.PI / 4;
-                tFront.position.x = boxMainLen/2 + slopeLen/2;
-                tFront.scale.set(1, rectDepth/rectHeight, 1);
-                group.add(tFront);
-
-                const shaftLen = 0.4 * 0.2; 
-                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, shaftLen, 16), this.getMaterial('orange'));
-                shaft.rotation.z = Math.PI / 2;
-                shaft.position.x = motLen / 2 + shaftLen / 2; 
-                group.add(shaft);
-
-                const holeRad = 0.03;
-                const holeDistance = 0.20; 
-                const holesGroup = new THREE.Group();
-                holesGroup.position.x = motLen / 2;
-                for (let i = 0; i < 4; i++) {
-                    const angle = i * Math.PI / 2; 
-                    const hole = new THREE.Mesh(new THREE.CylinderGeometry(holeRad, holeRad, 0.05, 16), this.getMaterial('port_black'));
-                    hole.rotation.z = Math.PI / 2;
-                    hole.position.y = holeDistance * Math.cos(angle);
-                    hole.position.z = holeDistance * Math.sin(angle);
-                    hole.position.x = 0.01; 
-                    holesGroup.add(hole);
-                }
-                group.add(holesGroup);
-
-                const portGroup = new THREE.Group();
-                portGroup.position.set(-motLen/2, 0.2, 0); portGroup.rotation.y = Math.PI; 
-                
-                const pHeight = 0.1; const pWidth = 0.275; const pDepth = 0.2;
-                const portBody = new THREE.Mesh(new THREE.BoxGeometry(pDepth, pHeight, pWidth), this.getMaterial('port_gray'));
-                portBody.position.x = 0.05; portGroup.add(portBody);
-
-                const portHole = new THREE.Mesh(new THREE.BoxGeometry(0.05, pHeight * 0.6, pWidth * 0.7), this.getMaterial('black_void'));
-                portHole.position.x = 0.13; portGroup.add(portHole);
-
-                const pinGeo = new THREE.BoxGeometry(0.01, 0.02, 0.015);
-                const pinCount = 8; const pinSpacing = (pWidth * 0.5) / pinCount;
-                for(let k=0; k<pinCount; k++) {
-                    const pin = new THREE.Mesh(pinGeo, this.getMaterial('gold'));
-                    pin.position.z = -((pinCount-1)*pinSpacing)/2 + k * pinSpacing;
-                    pin.position.y = -pHeight * 0.25; pin.position.x = 0.13; 
-                    portGroup.add(pin);
-                }
-                const latch = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.06), this.getMaterial('black_void'));
-                latch.position.set(0.13, pHeight * 0.25, 0);
-                portGroup.add(latch);
-                group.add(portGroup);
                 break;
             }
         }
@@ -367,29 +299,10 @@ export class SceneGraph {
         const centerBeamGeo = new THREE.BoxGeometry(0.3, 0.3, 1.6);
         const centerBeam = new THREE.Mesh(centerBeamGeo, frameMat); centerBeam.position.set(0, 0, 0); frameGroup.add(centerBeam);
 
-        const sideHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.16, 8); sideHoleGeo.rotateZ(Math.PI/2);
-        const zPositionsSide = [-1.8, -0.5, 0, 0.5, 1.8]; 
-        zPositionsSide.forEach(z => {
-            const hl = new THREE.Mesh(sideHoleGeo, holeMat); hl.position.set(-0.85, 0, z); frameGroup.add(hl);
-            const hr = new THREE.Mesh(sideHoleGeo, holeMat); hr.position.set(0.85, 0, z); frameGroup.add(hr);
-        });
-
-        const midHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.31, 8); 
-        const h1 = new THREE.Mesh(midHoleGeo, holeMat); h1.position.set(0, 0, -0.8); frameGroup.add(h1);
-        const h2 = new THREE.Mesh(midHoleGeo, holeMat); h2.position.set(0, 0, 0.8); frameGroup.add(h2);
-        
-        const zPositionsCenter = [-0.6, -0.2, 0.2, 0.6];
-        zPositionsCenter.forEach(z => {
-            const hc = new THREE.Mesh(midHoleGeo, holeMat); hc.position.set(0, 0, z); frameGroup.add(hc);
-        });
-
         const axMat = new THREE.MeshStandardMaterial({color:0x888888});
         const axGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.9, 12); 
         const fAxle = new THREE.Mesh(axGeo, axMat); fAxle.rotation.z = Math.PI/2; fAxle.position.set(0, 0, -1.2); this.worldRoot.add(fAxle);
         const bAxle = new THREE.Mesh(axGeo, axMat); bAxle.rotation.z = Math.PI/2; bAxle.position.set(0, 0, 1.2); this.worldRoot.add(bAxle);
-        const stub = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
-        [-1.0, 0.0, 1.0].forEach(z => { const m = new THREE.Mesh(stub, axMat); m.rotation.z = Math.PI/2; m.position.set(-1.05, 0, z); this.worldRoot.add(m); });
-        [-1.2, -0.4, 0.4, 1.2].forEach(z => { const m = new THREE.Mesh(stub, axMat); m.rotation.z = Math.PI/2; m.position.set(1.05, 0, z); this.worldRoot.add(m); });
     }
 
     updateCursorState(index, pos, mode) {
@@ -400,13 +313,9 @@ export class SceneGraph {
         let col = CONFIG.THEME.CURSOR_OPEN;
         let scale = 1.2;
         
-        if (mode === 1) { // GRAB
-            col = CONFIG.THEME.CURSOR_CLOSED; scale = 0.8; 
-        } else if (mode === 2) { // ROTATE
-            col = CONFIG.THEME.CURSOR_ROTATE; scale = 1.5; 
-        } else if (mode === 3) { // SCALE/ZOOM
-            col = CONFIG.THEME.CURSOR_SCALE; scale = 1.4;
-        }
+        if (mode === 1) { col = CONFIG.THEME.CURSOR_CLOSED; scale = 0.8; } 
+        else if (mode === 2) { col = CONFIG.THEME.CURSOR_ROTATE; scale = 1.5; } 
+        else if (mode === 3) { col = CONFIG.THEME.CURSOR_SCALE; scale = 1.4; }
 
         cursor.userData.dot.material.color.setHex(col);
         cursor.userData.ring.material.color.setHex(col);
@@ -426,6 +335,13 @@ export class SceneGraph {
         const preview = ModelFactory.createPart(type);
         preview.scale.setScalar(0.7);
         preview.position.set(0, 0.5, 0);
+        
+        // ✅ ВИПРАВЛЕНО: Якщо це шестерня, повертаємо її, щоб було видно
+        if (type === 'gear') {
+            preview.rotation.x = -Math.PI / 2; // Ставимо її "на попа" або плазом, але вище
+            preview.position.y = 0.6; // Піднімаємо вище над базою
+        }
+
         preview.traverse(c => {
             if(c.isMesh) {
                 c.material = c.material.clone();
